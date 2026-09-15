@@ -1,0 +1,2235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RFQ Sales Dashboard 2026</title>
+<script>
+/* ===================== LIBRARY LOADER (multi-CDN fallback) =====================
+   Instead of a single hard-coded <script src>, each library is tried against
+   several CDNs in turn. If one CDN is blocked/slow/down but another isn't,
+   the page still works. Only if EVERY source fails do we treat the library
+   as unavailable. */
+function loadScriptWithFallback(urls, isLoaded, timeoutMs) {
+  return new Promise(function (resolve) {
+    var i = 0;
+    function tryNext() {
+      if (isLoaded()) { resolve(true); return; }
+      if (i >= urls.length) { resolve(false); return; }
+      var url = urls[i++];
+      var tag = document.createElement('script');
+      tag.src = url;
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        tag.parentNode && tag.parentNode.removeChild(tag);
+        tryNext();
+      }, timeoutMs || 7000);
+      tag.onload = function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (isLoaded()) resolve(true); else tryNext();
+      };
+      tag.onerror = function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        tag.parentNode && tag.parentNode.removeChild(tag);
+        tryNext();
+      };
+      document.head.appendChild(tag);
+    }
+    tryNext();
+  });
+}
+
+window.__libsReady = Promise.all([
+  loadScriptWithFallback([
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+  ], function () { return typeof XLSX !== 'undefined'; }),
+  loadScriptWithFallback([
+    'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js',
+    'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js',
+    'https://unpkg.com/chart.js@4.4.4/dist/chart.umd.min.js'
+  ], function () { return typeof Chart !== 'undefined'; })
+]).then(function (results) {
+  return { xlsxOk: results[0], chartOk: results[1] };
+});
+</script>
+<style>
+:root{
+  --bg: #0f1720;
+  --panel: #16212c;
+  --panel-2: #1c2a37;
+  --line: #2a3a48;
+  --ink: #eaf1f6;
+  --ink-dim: #93a8b8;
+  --accent: #ff8a3d;
+  --accent-2: #35c2a0;
+  --accent-3: #4f8ef7;
+  --danger: #ef5b5b;
+  --grid: rgba(234,241,246,0.06);
+  --radius: 10px;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background: linear-gradient(180deg,#0c131a 0%, #0f1720 260px, #0f1720 100%);
+  color: var(--ink);
+  min-height:100vh;
+}
+::-webkit-scrollbar{height:8px;width:8px;}
+::-webkit-scrollbar-thumb{background:#33475a;border-radius:4px;}
+
+/* ---- Loading screen ---- */
+#loadingScreen{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+.spinner{
+  width:34px; height:34px; margin:0 auto;
+  border:3px solid #2a3a48;
+  border-top-color: var(--accent);
+  border-radius:50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin{ to { transform: rotate(360deg); } }
+
+/* ---- Upload screen ---- */
+#uploadScreen{
+  display:none;
+  min-height:100vh;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+.upload-card{
+  width:100%;
+  max-width:560px;
+  background: var(--panel);
+  border:1px solid var(--line);
+  border-radius: 16px;
+  padding:40px 36px;
+  text-align:center;
+}
+.upload-card .tag{
+  display:inline-block;
+  font-size:12px;
+  letter-spacing:.04em;
+  color: var(--accent);
+  background: rgba(255,138,61,0.12);
+  border:1px solid rgba(255,138,61,0.35);
+  padding:4px 10px;
+  border-radius:20px;
+  margin-bottom:18px;
+}
+.upload-card h1{
+  font-size:24px;
+  margin:0 0 8px;
+  font-weight:700;
+}
+.upload-card p{
+  color: var(--ink-dim);
+  font-size:14px;
+  line-height:1.6;
+  margin:0 0 26px;
+}
+.drop-zone{
+  border:2px dashed #3a4d5e;
+  border-radius:12px;
+  padding:34px 20px;
+  cursor:pointer;
+  transition: border-color .15s, background .15s;
+}
+.drop-zone:hover, .drop-zone.drag{
+  border-color: var(--accent);
+  background: rgba(255,138,61,0.06);
+}
+.drop-zone svg{margin-bottom:10px;}
+.drop-zone .main{font-size:15px;font-weight:600;}
+.drop-zone .sub{font-size:12.5px;color:var(--ink-dim);margin-top:4px;}
+#fileInput{display:none;}
+.status-msg{
+  margin-top:18px;
+  font-size:13px;
+  color: var(--ink-dim);
+  min-height:18px;
+}
+.status-msg.error{color: var(--danger);}
+.status-msg.ok{color: var(--accent-2);}
+
+#liveUpdateToast{
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 20px);
+  background: var(--panel-2);
+  border: 1px solid var(--accent-2);
+  color: var(--ink);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s ease, transform .25s ease;
+  z-index: 1000;
+}
+#liveUpdateToast.show{
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---- Dashboard shell ---- */
+#dashboard{display:none;}
+header.topbar{
+  position:sticky; top:0; z-index:20;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 28px;
+  background: rgba(15,23,32,0.92);
+  backdrop-filter: blur(6px);
+  border-bottom:1px solid var(--line);
+}
+header.topbar .brand{display:flex; flex-direction:column; gap:2px;}
+header.topbar .brand .title{font-weight:700; font-size:16px;}
+header.topbar .brand .meta{font-size:11.5px; color:var(--ink-dim);}
+header.topbar .actions{display:flex; gap:10px; align-items:center;}
+.btn{
+  border:1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  padding:8px 14px;
+  border-radius:8px;
+  font-size:13px;
+  cursor:pointer;
+  transition: background .15s, border-color .15s;
+}
+.btn:hover{border-color:#4a6274;}
+.btn.primary{
+  background: var(--accent);
+  border-color: var(--accent);
+  color:#1a0e04;
+  font-weight:600;
+}
+.seg{
+  display:inline-flex;
+  border:1px solid var(--line);
+  border-radius:8px;
+  overflow:hidden;
+}
+.seg button{
+  border:none;
+  background: var(--panel-2);
+  color: var(--ink-dim);
+  padding:7px 16px;
+  font-size:13px;
+  cursor:pointer;
+  transition: background .15s, color .15s;
+}
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button.active{
+  background: var(--accent);
+  color:#1a0e04;
+  font-weight:600;
+}
+.seg button:hover:not(.active){ background:#20303e; }
+.btn.primary:hover{filter:brightness(1.06);}
+
+main{padding:22px 28px 60px; max-width:1440px; margin:0 auto;}
+
+.section{
+  margin-bottom:30px;
+}
+.section-head{
+  display:flex; align-items:flex-end; justify-content:space-between; gap:16px;
+  margin-bottom:14px; flex-wrap:wrap;
+}
+.section-head .htext .num{
+  font-size:11px; color:var(--accent); font-weight:700; letter-spacing:.04em;
+}
+.section-head .htext h2{
+  margin:2px 0 0; font-size:18px; font-weight:700;
+}
+.section-head .htext .desc{font-size:12.5px; color:var(--ink-dim); margin-top:3px;}
+.filter-row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+select.month-filter{
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  color:var(--ink);
+  padding:7px 10px;
+  border-radius:8px;
+  font-size:13px;
+  cursor:pointer;
+}
+
+.grid{display:grid; gap:16px;}
+.grid.cols-4{grid-template-columns: repeat(4,1fr);}
+.grid.cols-3{grid-template-columns: repeat(3,1fr);}
+.grid.cols-2{grid-template-columns: repeat(2,1fr);}
+@media(max-width:1100px){
+  .grid.cols-4{grid-template-columns: repeat(2,1fr);}
+  .grid.cols-3{grid-template-columns: repeat(1,1fr);}
+  .grid.cols-2{grid-template-columns: repeat(1,1fr);}
+}
+
+.card{
+  background: var(--panel);
+  border:1px solid var(--line);
+  border-radius: var(--radius);
+  padding:18px 18px;
+}
+.card.kpi{
+  display:flex; flex-direction:column; gap:6px;
+}
+.card.kpi .label{font-size:12px; color:var(--ink-dim);}
+.card.kpi .value{font-size:28px; font-weight:800; letter-spacing:-.01em;}
+.card.kpi .value small{font-size:14px; font-weight:600; color:var(--ink-dim);}
+.card.kpi .breakdown{display:flex; gap:12px; margin-top:6px; flex-wrap:wrap;}
+.card.kpi .breakdown span{font-size:12px; color:var(--ink-dim);}
+.card.kpi .breakdown span b{color:var(--ink); font-weight:700;}
+.total-badge{text-align:right;}
+.total-badge .label{font-size:12px; color:var(--ink-dim);}
+.total-badge .value{font-size:24px; font-weight:800; letter-spacing:-.01em; color:var(--accent-2);}
+.total-badge .value small{font-size:13px; font-weight:600; color:var(--ink-dim);}
+
+.kpi-info{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;}
+.kpi-chip{
+  font-size:12.5px; font-weight:700; padding:5px 12px; border-radius:20px;
+  border:1px solid var(--line); background:var(--panel-2);
+}
+.kpi-chip.s1{color:#87b3ff; border-color:rgba(79,142,247,0.4); background:rgba(79,142,247,0.1);}
+.kpi-chip.s2{color:#5fe0bc; border-color:rgba(53,194,160,0.4); background:rgba(53,194,160,0.1);}
+
+.team-toggle{display:flex; gap:4px; background:var(--panel-2); border:1px solid var(--line); border-radius:9px; padding:3px;}
+.team-toggle-btn{
+  background:none; border:none; color:var(--ink-dim); font-size:12.5px; font-weight:600;
+  padding:6px 12px; border-radius:6px; cursor:pointer; white-space:nowrap;
+}
+.team-toggle-btn:hover{color:var(--ink);}
+.team-toggle-btn.active{background:var(--accent); color:#1a0e04;}
+.dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px;}
+
+.chart-card{
+  background: var(--panel);
+  border:1px solid var(--line);
+  border-radius: var(--radius);
+  padding:18px;
+}
+.chart-card h3{
+  margin:0 0 4px; font-size:14px; font-weight:700;
+}
+.chart-card .sub{font-size:11.5px; color:var(--ink-dim); margin-bottom:12px;}
+.chart-wrap{position:relative; height:280px;}
+.chart-wrap.tall{height:360px;}
+.chart-wrap.short{height:220px;}
+
+table.data-table{width:100%; border-collapse:collapse; font-size:13px;}
+table.data-table th{
+  text-align:left; color:var(--ink-dim); font-weight:600; font-size:11.5px;
+  padding:6px 8px; border-bottom:1px solid var(--line); letter-spacing:.02em;
+}
+table.data-table td{padding:7px 8px; border-bottom:1px solid rgba(255,255,255,0.04);}
+table.data-table tr:hover td{background: rgba(255,255,255,0.02);}
+.rank-badge{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; border-radius:5px; font-size:11px; font-weight:700;
+  background: var(--panel-2); color:var(--ink-dim); margin-right:8px;
+}
+.section-divider{
+  height:1px; background: var(--line); margin: 36px 0 26px;
+}
+.badge{
+  display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
+}
+.badge.s1{background:rgba(79,142,247,0.15); color:#87b3ff;}
+.badge.s2{background:rgba(53,194,160,0.15); color:#5fe0bc;}
+.empty-note{font-size:12px; color:var(--ink-dim); padding:10px 4px;}
+footer.foot{
+  text-align:center; padding:30px 0 10px; color:var(--ink-dim); font-size:11.5px;
+}
+
+/* ---- Detail modal (click a bar/segment to inspect underlying items) ---- */
+#detailModalOverlay{
+  display:none;
+  position:fixed; inset:0; z-index:100;
+  background: rgba(6,10,14,0.72);
+  align-items:center; justify-content:center;
+  padding:20px;
+}
+#detailModalOverlay.show{ display:flex; }
+#detailModalCard{
+  width:100%; max-width:880px; max-height:82vh;
+  background: var(--panel);
+  border:1px solid var(--line);
+  border-radius:14px;
+  display:flex; flex-direction:column;
+  overflow:hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+}
+#detailModalHeader{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  padding:18px 20px; border-bottom:1px solid var(--line); flex:0 0 auto;
+}
+#detailModalTitle{ font-size:16px; font-weight:700; }
+#detailModalSubtitle{ font-size:12px; color:var(--ink-dim); margin-top:3px; }
+#detailModalClose{
+  background:none; border:none; color:var(--ink-dim); font-size:26px; line-height:1;
+  cursor:pointer; padding:0 4px;
+}
+#detailModalClose:hover{ color:var(--ink); }
+#detailModalBody{
+  overflow:auto; padding:6px 20px 20px;
+}
+table.detail-table{ width:100%; border-collapse:collapse; font-size:11.5px; white-space:nowrap; }
+table.detail-table th{
+  position:sticky; top:0; background:var(--panel);
+  text-align:left; color:var(--ink-dim); font-weight:600; font-size:10.5px;
+  padding:8px 10px; border-bottom:1px solid var(--line); letter-spacing:.02em; white-space:nowrap;
+}
+table.detail-table td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; white-space:nowrap; }
+table.detail-table tr:hover td{ background: rgba(255,255,255,0.02); }
+</style>
+</head>
+<body>
+
+<div id="loadingScreen">
+  <div class="upload-card">
+    <span class="tag">RFQ_2026 · SALES DASHBOARD</span>
+    <div class="spinner"></div>
+    <p style="margin-top:16px;">Loading the latest data your team uploaded...</p>
+  </div>
+</div>
+
+<div id="uploadScreen">
+  <div class="upload-card">
+    <span class="tag">RFQ_2026 · SALES DASHBOARD</span>
+    <h1 id="uploadTitle">Upload RFQ Excel File</h1>
+    <p id="uploadDesc">Choose an .xlsm / .xlsx file containing the "RFQ_2026" sheet. It will be processed and saved so your whole team sees the same data — no need to re-upload every time you open this page.</p>
+    <div class="drop-zone" id="dropZone">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ff8a3d" stroke-width="1.6" style="margin:0 auto;display:block;"><path d="M12 3v12m0-12l-4 4m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="main">Drag a file here, or click to choose one</div>
+      <div class="sub">Supports .xlsm and .xlsx</div>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xlsm,.xls">
+    <div class="status-msg" id="statusMsg"></div>
+    <button class="btn" id="cancelUploadBtn" style="display:none;margin-top:14px;">Cancel, go back to current data</button>
+  </div>
+</div>
+
+<div id="detailModalOverlay">
+  <div id="detailModalCard">
+    <div id="detailModalHeader">
+      <div>
+        <div id="detailModalTitle">Details</div>
+        <div id="detailModalSubtitle"></div>
+      </div>
+      <button id="detailModalClose" aria-label="Close">&times;</button>
+    </div>
+    <div id="detailModalBody"></div>
+  </div>
+</div>
+
+<div id="dashboard">
+  <header class="topbar">
+    <div class="brand">
+      <div class="title">RFQ Sales Dashboard</div>
+      <div class="meta" id="metaInfo">—</div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="downloadWithDataBtn">Download file with data</button>
+      <button class="btn primary" id="reloadBtn">Upload new data</button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- SECTION 1: RFQ -->
+    <section class="section" id="sec1">
+      <div class="section-head">
+        <div class="htext">
+          <div class="num">01</div>
+          <h2>RFQ Overview</h2>
+          <div class="desc">Total RFQ count, broken down by month (Month RFQ) and product type</div>
+        </div>
+        <div class="filter-row">
+          <select class="month-filter" id="rfqMonthFilter"></select>
+        </div>
+      </div>
+      <div class="grid cols-4" style="margin-bottom:16px;">
+        <div class="card kpi">
+          <div class="label">Total RFQ</div>
+          <div class="value" id="rfqTotal">0</div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><span class="dot" style="background:#4f8ef7"></span>2W</div>
+          <div class="value" id="rfq2w">0</div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><span class="dot" style="background:#ff8a3d"></span>4W</div>
+          <div class="value" id="rfq4w">0</div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><span class="dot" style="background:#35c2a0"></span>OTHER</div>
+          <div class="value" id="rfqOther">0</div>
+        </div>
+      </div>
+      <div class="grid cols-3">
+        <div class="chart-card">
+          <h3>Breakdown by Type</h3>
+          <div class="sub">2W / 4W / OTHER</div>
+          <div class="chart-wrap short"><canvas id="rfqTypeChart"></canvas></div>
+        </div>
+        <div class="chart-card" style="grid-column: span 2;">
+          <h3>Monthly RFQ</h3>
+          <div class="sub">RFQ count by month and type</div>
+          <div class="chart-wrap short"><canvas id="rfqMonthChart"></canvas></div>
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:12px;">
+        <button class="btn" id="toggleNumbers_sec1">Hide numbers on bars</button>
+      </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <!-- SECTION 2: QUOTE -->
+    <section class="section" id="sec2">
+      <div class="section-head">
+        <div class="htext">
+          <div class="num">02</div>
+          <h2>Quote Overview</h2>
+          <div class="desc">Total Quote count, broken down by month (Month Quote), type, and main status</div>
+        </div>
+        <div class="filter-row">
+          <select class="month-filter" id="quoteMonthFilter"></select>
+        </div>
+      </div>
+      <div class="grid cols-3" style="margin-bottom:16px;">
+        <div class="card kpi">
+          <div class="label">Total Quote</div>
+          <div class="value" id="quoteTotal">0</div>
+          <div class="breakdown">
+            <span><span class="dot" style="background:#4f8ef7"></span>2W <b id="quote2w">0</b></span>
+            <span><span class="dot" style="background:#ff8a3d"></span>4W <b id="quote4w">0</b></span>
+            <span><span class="dot" style="background:#35c2a0"></span>OTHER <b id="quoteOther">0</b></span>
+          </div>
+        </div>
+        <div class="card kpi">
+          <div class="label">Issuing Quote (Estimating)</div>
+          <div class="value" id="issuingTotal">0</div>
+          <div class="breakdown">
+            <span><span class="dot" style="background:#4f8ef7"></span>2W <b id="issuing2w">0</b></span>
+            <span><span class="dot" style="background:#ff8a3d"></span>4W <b id="issuing4w">0</b></span>
+            <span><span class="dot" style="background:#35c2a0"></span>OTHER <b id="issuingOther">0</b></span>
+          </div>
+        </div>
+        <div class="card kpi">
+          <div class="label">Already Quote (Submitted and waiting result)</div>
+          <div class="value" id="alreadyTotal">0</div>
+          <div class="breakdown">
+            <span><span class="dot" style="background:#4f8ef7"></span>2W <b id="already2w">0</b></span>
+            <span><span class="dot" style="background:#ff8a3d"></span>4W <b id="already4w">0</b></span>
+            <span><span class="dot" style="background:#35c2a0"></span>OTHER <b id="alreadyOther">0</b></span>
+          </div>
+        </div>
+      </div>
+      <div class="grid cols-2">
+        <div class="chart-card">
+          <h3>Monthly Quote</h3>
+          <div class="sub">Issuing Quote vs Already Quote by month</div>
+          <div class="chart-wrap short"><canvas id="quoteMonthChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Quote Breakdown by Type</h3>
+          <div class="sub">Issuing Quote vs Already Quote split by 2W/4W/OTHER</div>
+          <div class="chart-wrap short"><canvas id="quoteTypeChart"></canvas></div>
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:12px;">
+        <button class="btn" id="toggleNumbers_sec2">Hide numbers on bars</button>
+      </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <!-- SECTION 3: ALREADY QUOTE STATUS -->
+    <section class="section" id="sec3">
+      <div class="section-head">
+        <div class="htext">
+          <div class="num">03</div>
+          <h2>Already Quote Sub-status</h2>
+          <div class="desc">Nomination / Waiting / Lost / Cancelled / RFI Study (uses the same month filter as Quote)</div>
+        </div>
+      </div>
+      <div class="grid cols-3">
+        <div class="chart-card" style="grid-column: span 1;">
+          <h3>Count by Status</h3>
+          <div class="sub">Within Already Quote</div>
+          <div class="chart-wrap short"><canvas id="statusChart"></canvas></div>
+        </div>
+        <div class="chart-card" style="grid-column: span 2;">
+          <h3>Status Details</h3>
+          <table class="data-table" id="statusTable">
+            <thead><tr><th>Status</th><th>Count</th><th>2W</th><th>4W</th><th>OTHER</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:12px;">
+        <button class="btn" id="toggleNumbers_sec3">Hide numbers on bars</button>
+      </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <!-- SECTION 4: NOMINATION -->
+    <section class="section" id="sec4">
+      <div class="section-head">
+        <div class="htext">
+          <div class="num">04</div>
+          <h2>Nomination — Jobs Won from Customers</h2>
+          <div class="desc">Number of jobs and sales value (MB.) from Nomination, split by type (linked to the S1/S2 team selector in section 05 below)</div>
+        </div>
+        <div class="filter-row">
+          <select class="month-filter" id="nomMonthFilter"></select>
+        </div>
+      </div>
+      <div class="grid cols-4">
+        <div class="card kpi">
+          <div class="label">Grand Total</div>
+          <div class="value" id="nomTotalCount">0 <small>jobs</small></div>
+          <div class="value" style="font-size:18px;color:var(--accent-2);" id="nomTotalValue">0 <small>MB</small></div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><span class="dot" style="background:#4f8ef7"></span>2W</div>
+          <div class="value" id="nom2wCount">0 <small>jobs</small></div>
+          <div class="value" style="font-size:16px;color:var(--ink-dim);" id="nom2wValue">0 <small>MB</small></div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><span class="dot" style="background:#ff8a3d"></span>4W</div>
+          <div class="value" id="nom4wCount">0 <small>jobs</small></div>
+          <div class="value" style="font-size:16px;color:var(--ink-dim);" id="nom4wValue">0 <small>MB</small></div>
+        </div>
+        <div class="card kpi">
+          <div class="label"><span class="dot" style="background:#35c2a0"></span>OTHER</div>
+          <div class="value" id="nomOtherCount">0 <small>jobs</small></div>
+          <div class="value" style="font-size:16px;color:var(--ink-dim);" id="nomOtherValue">0 <small>MB</small></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <!-- SECTION 5: SALES PERFORMANCE -->
+    <section class="section" id="sec5">
+      <div class="section-head">
+        <div class="htext">
+          <div class="num">05</div>
+          <h2>Individual Sales Performance</h2>
+          <div class="desc">Nomination sales per person, sorted high to low, split by team S1 / S2 (uses the same month filter as Nomination) — the team selector on the right also drives the numbers in section 04</div>
+        </div>
+        <div class="seg" id="salesTeamToggle">
+          <button type="button" class="active" data-team="all">All</button>
+          <button type="button" data-team="S1">S1</button>
+          <button type="button" data-team="S2">S2</button>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-wrap tall"><canvas id="salesChart"></canvas></div>
+        <div style="text-align:center; margin-top:12px;">
+          <button class="btn" id="toggleNumbers_sec5">Hide numbers on bars</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <!-- SECTION 6+7: TOP MODEL / TOP CUSTOMER -->
+    <section class="section" id="sec67">
+      <div class="grid cols-2">
+        <div>
+          <div class="section-head">
+            <div class="htext">
+              <div class="num">06</div>
+              <h2>Top 10 Model</h2>
+              <div class="desc">Top 10 Nomination totals by vehicle model</div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-wrap tall"><canvas id="topModelChart"></canvas></div>
+          </div>
+        </div>
+        <div>
+          <div class="section-head">
+            <div class="htext">
+              <div class="num">07</div>
+              <h2>Top 10 Customer</h2>
+              <div class="desc">Top 10 Nomination totals by customer</div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-wrap tall"><canvas id="topCustomerChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:12px;">
+        <button class="btn" id="toggleNumbers_sec67">Hide numbers on bars</button>
+      </div>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <!-- SECTION 8: CUMULATIVE MONTHLY TREND -->
+    <section class="section" id="sec8">
+      <div class="section-head">
+        <div class="htext">
+          <div class="num">08</div>
+          <h2>Cumulative Monthly Nomination Trend</h2>
+          <div class="desc">Cumulative total from prior months + this month's value, with a dashed monthly Plan line per team. Shows all 12 months of the year (months with no data yet show only the Plan line)</div>
+          <div class="kpi-info">
+            <span class="kpi-chip s1">KPI of S1 = <span id="kpiS1Text">172</span> MB</span>
+            <span class="kpi-chip s2">KPI of S2 = <span id="kpiS2Text">90</span> MB</span>
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
+          <div class="total-badge">
+            <div class="label">Cumulative Total Sales</div>
+            <div class="value" id="cumulativeTotalValue">0 <small>MB</small></div>
+          </div>
+          <div class="team-toggle" id="kpiTeamToggle">
+            <button class="team-toggle-btn active" data-team="ALL">KPI All</button>
+            <button class="team-toggle-btn" data-team="S1">KPI S1</button>
+            <button class="team-toggle-btn" data-team="S2">KPI S2</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-wrap tall"><canvas id="cumulativeTrendChart"></canvas></div>
+        <div style="text-align:center; margin-top:12px;">
+          <button class="btn" id="toggleSegmentNumbersBtn">Hide numbers on bars</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">Processed from the file you upload. Everything runs inside your browser — no data is sent anywhere else.</footer>
+  </main>
+</div>
+
+<script>
+/* ===================== CONFIG ===================== */
+// 0-based column indices matching the RFQ_2026 sheet layout
+const COL = {
+  TYPE: 5,        // F  Type (2W / 4W / Nonmobility)
+  SECTION: 6,     // G  Section (S1 / S2)
+  RFQ_NO: 7,      // H  RFQ List No.(Year-Month-Run no)
+  CUSTID: 10,     // K  CUST ID
+  CUSTOMER: 11,   // L  Customer
+  SALES: 12,      // M  Sales Contact
+  PART_NO: 13,    // N  Part No.
+  PART_NAME: 14,  // O  Part Name
+  MODEL: 17,      // R  Customer Program (Model)
+  OEM: 19,        // T  OEM
+  MONTH_RFQ: 130, // EA Month RFQ
+  MONTH_QUOTE: 131, // EB Month QUOTE
+  MONTH_NOM: 132, // EC Month NOMINATION
+  STATUS: 135,    // EF TEXT STATUS OF QUOTE
+  REMARK_STATUS: 137, // EH REMARK STATUS (FOR SALES ENG.)
+  VALUE: 153      // EX Annual (MB.) + Tooling_SA
+};
+const TARGET_SHEET = 'rfq_2026';
+const ALREADY_STATUSES = ['Nomination', 'Waiting', 'Lost', 'Cancelled', 'RFI Study'];
+const ALLOWED_STATUSES = ['Issuing Quote', ...ALREADY_STATUSES];
+const TYPE_COLORS = { '2W': '#4f8ef7', '4W': '#ff8a3d', 'OTHER': '#35c2a0' };
+const STATUS_COLORS = {
+  'Nomination': '#35c2a0', 'Waiting': '#f5c451', 'Lost': '#ef5b5b',
+  'Cancelled': '#8a94a6', 'RFI Study': '#9d7bff'
+};
+const MONTH_TH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const STORAGE_KEY = 'rfq-2026-records';
+const POLL_INTERVAL_MS = 20000; // how often to check for teammates' updates while the dashboard is open
+
+let ALL_RECORDS = [];
+let rfqRecords = [], quoteRecords = [], issuingRecords = [], alreadyRecords = [], nominationRecords = [];
+let currentDataVersion = null; // uploadedAt of the data currently on screen — used to detect teammates' updates
+let currentFileName = null;
+let pollTimer = null;
+const charts = {};
+
+/* ===================== CHART.JS THEME ===================== */
+function applyChartTheme() {
+  if (typeof Chart === 'undefined') return;
+  Chart.defaults.color = '#93a8b8';
+  Chart.defaults.borderColor = 'rgba(234,241,246,0.08)';
+  Chart.defaults.font.family = "'Segoe UI',sans-serif";
+  Chart.defaults.font.size = 12;
+}
+applyChartTheme();
+
+let libsAreReady = false;
+function missingLibNames(libStatus) {
+  const missing = [];
+  if (!libStatus.xlsxOk) missing.push('XLSX (SheetJS)');
+  if (!libStatus.chartOk) missing.push('Chart.js');
+  return missing.join(' and ');
+}
+
+/* ===================== HELPERS ===================== */
+function isValidDate(v) { return v instanceof Date && !isNaN(v.getTime()); }
+
+// Display window: only show data from 1 Jan 2026 up to the current month.
+// This is a defensive clamp — it keeps any stray/garbage date (bad cell,
+// leftover test row, mis-entered year, etc.) from ever leaking into the
+// dashboard as a phantom month, regardless of what causes it upstream.
+const DISPLAY_START_KEY = '2026-01';
+function currentMonthKey() {
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+}
+function isDateInDisplayRange(v) {
+  if (!isValidDate(v)) return false;
+  const k = monthKey(v);
+  return k >= DISPLAY_START_KEY && k <= currentMonthKey();
+}
+
+// The Month RFQ / Month QUOTE / Month NOMINATION dates from Excel need +1 day
+// applied before being used anywhere (month filters, charts, grouping) — this
+// is a deliberate correction for how those dates are recorded in the source file.
+function shiftExcelMonthDate(v) {
+  if (!isValidDate(v)) return null;
+  const shifted = new Date(v.getTime());
+  shifted.setUTCDate(shifted.getUTCDate() + 1);
+  return shifted;
+}
+
+// SheetJS (cellDates:true) builds Date objects using UTC internally, so we must
+// read them back with the UTC getters — using local getters (getFullYear/getMonth)
+// can shift a date into the wrong month depending on the browser's timezone.
+function monthKey(d) { return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0'); }
+
+function monthLabelFromKey(k) {
+  const [y, m] = k.split('-').map(Number);
+  return MONTH_TH[m - 1] + ' ' + y;
+}
+
+function normalizeType(raw) {
+  if (raw === null || raw === undefined) return null;
+  const t = String(raw).trim();
+  if (t === '') return null;
+  if (t === '2W') return '2W';
+  if (t === '4W') return '4W';
+  return 'OTHER';
+}
+
+function normalizeSection(raw) {
+  const s = raw ? String(raw).trim().toUpperCase() : '';
+  return (s === 'S1' || s === 'S2') ? s : null;
+}
+
+function normalizeStatus(raw) {
+  const s = raw ? String(raw).trim() : '';
+  return ALLOWED_STATUSES.includes(s) ? s : null;
+}
+
+function toNumber(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  const n = parseFloat(v);
+  return isFinite(n) ? n : 0;
+}
+
+function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+function fmtMB(n) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+function emptyTypeCounter() { return { '2W': 0, '4W': 0, 'OTHER': 0 }; }
+
+/* ===================== DETAIL MODAL (click a bar/segment to inspect items) ===================== */
+const detailModalOverlay = document.getElementById('detailModalOverlay');
+const detailModalTitle = document.getElementById('detailModalTitle');
+const detailModalSubtitle = document.getElementById('detailModalSubtitle');
+const detailModalBody = document.getElementById('detailModalBody');
+
+document.getElementById('detailModalClose').addEventListener('click', closeDetailModal);
+detailModalOverlay.addEventListener('click', (e) => { if (e.target === detailModalOverlay) closeDetailModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetailModal(); });
+
+function closeDetailModal() {
+  detailModalOverlay.classList.remove('show');
+}
+
+function openDetailModal(title, records, opts) {
+  opts = opts || {};
+  detailModalTitle.textContent = title;
+  detailModalSubtitle.textContent = records.length.toLocaleString() + ' items';
+  detailModalBody.innerHTML = '';
+
+  if (!records.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-note';
+    empty.textContent = 'No items in this group';
+    detailModalBody.appendChild(empty);
+    detailModalOverlay.classList.add('show');
+    return;
+  }
+
+  // Group same-model rows together — letters/numbers first, then anything
+  // starting with a special character (e.g. "-"), then blanks. Plain
+  // localeCompare alone can rank "-ABC" among the A's since many locales
+  // ignore punctuation, which isn't what we want here.
+  function modelSortKey(m) {
+    const s = (m || '').trim();
+    if (!s) return { rank: 2, s };
+    return { rank: /[A-Za-z0-9ก-๙]/.test(s.charAt(0)) ? 0 : 1, s };
+  }
+  const sorted = records.slice().sort((a, b) => {
+    const ka = modelSortKey(a.model), kb = modelSortKey(b.model);
+    if (ka.rank !== kb.rank) return ka.rank - kb.rank;
+    return ka.s.localeCompare(kb.s, 'en', { numeric: true, sensitivity: 'base' });
+  });
+
+  // If every row's sales value is 0 (or missing), the value column adds nothing — drop it.
+  // Callers can also force it hidden regardless of the data (e.g. RFQ stage, before any value exists).
+  const showValue = !opts.hideValue && sorted.some(r => (r.value || 0) !== 0);
+
+  const headers = ['OEM', 'Model', 'RFQ No.', 'Customer', 'Part No.', 'Part Name', 'Sales'];
+  if (showValue) headers.push('Sales (MB.)');
+  if (opts.showRemark) headers.push('Remark Status');
+
+  const table = document.createElement('table');
+  table.className = 'detail-table';
+  table.innerHTML = '<thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead>';
+  const tbody = document.createElement('tbody');
+  sorted.forEach(r => {
+    const tr = document.createElement('tr');
+    const cells = [r.oem, r.model, r.rfqNo, r.customer, r.partNo, r.partName, r.sales];
+    cells.forEach(val => {
+      const td = document.createElement('td');
+      td.textContent = val || '—';
+      tr.appendChild(td);
+    });
+    if (showValue) {
+      const valTd = document.createElement('td');
+      valTd.textContent = fmtMB(r.value || 0);
+      tr.appendChild(valTd);
+    }
+    if (opts.showRemark) {
+      const remarkTd = document.createElement('td');
+      const remarkText = (r.remarkStatus || '—').replace(/\s*[\r\n]+\s*/g, ' ').trim() || '—';
+      remarkTd.textContent = remarkText;
+      remarkTd.style.whiteSpace = 'nowrap';
+      tr.appendChild(remarkTd);
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  detailModalBody.appendChild(table);
+  detailModalOverlay.classList.add('show');
+}
+
+// Wraps a Chart.js onClick handler: fires handler(elementIndex, datasetIndex) only
+// when the click actually landed on a chart element (bar/segment).
+function chartClickHandler(handler) {
+  return function (evt, elements) {
+    if (!elements || !elements.length) return;
+    handler(elements[0].index, elements[0].datasetIndex);
+  };
+}
+
+/* ===================== FILE HANDLING ===================== */
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const statusMsg = document.getElementById('statusMsg');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files.length) handleFile(e.target.files[0]);
+});
+document.getElementById('reloadBtn').addEventListener('click', showUploadScreen);
+document.getElementById('cancelUploadBtn').addEventListener('click', () => {
+  document.getElementById('uploadScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  setStatus('');
+  startPolling();
+});
+
+// Builds a full standalone copy of this page with the currently loaded data
+// embedded directly in it (as a small <script> placed before the main script).
+// Opening that file needs no upload and no shared storage — init() picks up
+// window.__EMBEDDED_DATA__ before anything else. See the check near the top
+// of init() for the read side of this.
+function buildStandaloneFileWithData() {
+  const docClone = document.cloneNode(true);
+
+  // Reset transient UI state so the exported file doesn't open showing whatever
+  // modal/toast happened to be on screen at the moment of export.
+  const modalClone = docClone.getElementById('detailModalOverlay');
+  if (modalClone) modalClone.classList.remove('show');
+  const toastClone = docClone.getElementById('liveUpdateToast');
+  if (toastClone) { toastClone.classList.remove('show'); toastClone.textContent = ''; }
+  const uploadScreenClone = docClone.getElementById('uploadScreen');
+  if (uploadScreenClone) uploadScreenClone.style.display = 'none';
+  const loadingScreenClone = docClone.getElementById('loadingScreen');
+  if (loadingScreenClone) loadingScreenClone.style.display = 'none';
+  const dashboardClone = docClone.getElementById('dashboard');
+  if (dashboardClone) dashboardClone.style.display = 'block';
+
+  const dataScript = docClone.createElement('script');
+  const payload = {
+    records: serializeRecords(ALL_RECORDS),
+    fileName: currentFileName || 'Unknown file name',
+    uploadedAt: currentDataVersion || new Date().toISOString()
+  };
+  dataScript.textContent = 'window.__EMBEDDED_DATA__ = ' + JSON.stringify(payload) + ';';
+  docClone.head.appendChild(dataScript);
+
+  return '<!DOCTYPE html>\n' + docClone.documentElement.outerHTML;
+}
+
+document.getElementById('downloadWithDataBtn').addEventListener('click', function () {
+  if (!ALL_RECORDS.length) {
+    showLiveUpdateToast('No data to embed yet');
+    return;
+  }
+  try {
+    const html = buildStandaloneFileWithData();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const datePart = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = 'RFQ_Sales_Dashboard_with_data_' + datePart + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showLiveUpdateToast('Downloaded a file with the data embedded — opening it anywhere shows the data immediately, no re-upload needed');
+  } catch (err) {
+    console.error('Failed to build standalone file:', err);
+    showLiveUpdateToast('Failed to build the download file: ' + (err.message || 'unknown error'));
+  }
+});
+
+function setDropZoneEnabled(enabled) {
+  dropZone.style.pointerEvents = enabled ? '' : 'none';
+  dropZone.style.opacity = enabled ? '' : '0.5';
+}
+setDropZoneEnabled(false); // re-enabled once init() confirms the libraries loaded
+
+function setStatus(msg, cls) {
+  statusMsg.textContent = msg;
+  statusMsg.className = 'status-msg' + (cls ? ' ' + cls : '');
+}
+
+// Show the upload screen. If a dashboard is already loaded (re-upload flow),
+// show the "cancel" option so the user can back out without losing the current view.
+function showUploadScreen() {
+  stopPolling();
+  const hasData = ALL_RECORDS.length > 0;
+  document.getElementById('uploadTitle').textContent = hasData ? 'Upload new data' : 'Upload RFQ Excel File';
+  document.getElementById('uploadDesc').textContent = hasData
+    ? 'The new file will overwrite the current data everyone on the team sees. Anyone who opens this dashboard will see the new data immediately.'
+    : 'Choose an .xlsm / .xlsx file containing the "RFQ_2026" sheet. It will be processed and saved so your whole team sees the same data — no need to re-upload every time you open this page.';
+  document.getElementById('cancelUploadBtn').style.display = hasData ? 'inline-block' : 'none';
+  setStatus('');
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('uploadScreen').style.display = 'flex';
+}
+
+function showDashboard(fileName, uploadedAt, fromCache) {
+  currentDataVersion = uploadedAt;
+  currentFileName = fileName;
+  const when = new Date(uploadedAt);
+  const meta = (fromCache ? 'Latest data uploaded by the team' : 'Upload successful') +
+    '  ·  File: ' + fileName + '  ·  Last updated: ' + when.toLocaleString('en-US') +
+    '  ·  ' + ALL_RECORDS.length.toLocaleString() + ' data rows';
+  document.getElementById('metaInfo').textContent = meta;
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('uploadScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  startPolling();
+}
+
+function handleFile(file) {
+  if (!libsAreReady || typeof XLSX === 'undefined' || typeof Chart === 'undefined') {
+    setStatus('Required libraries have not finished loading. Please wait a moment or refresh this page and try again before uploading a file', 'error');
+    return;
+  }
+  setStatus('Reading file ' + file.name + ' ...');
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+      const sheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === TARGET_SHEET);
+      if (!sheetName) {
+        throw new Error('Sheet "RFQ_2026" was not found in this file (found sheets: ' + wb.SheetNames.join(', ') + ')');
+      }
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const headerIdx = locateHeaderRow(rows);
+      if (headerIdx < 0) {
+        throw new Error('Could not find the header row (Type column). Please check that the file structure matches the template');
+      }
+      const dataRows = rows.slice(headerIdx + 1);
+      processRows(dataRows);
+
+      const uploadedAt = new Date().toISOString();
+      setStatus('Processed successfully. Saving for the team...', 'ok');
+
+      try {
+        await window.storage.set(STORAGE_KEY, JSON.stringify({
+          fileName: file.name,
+          uploadedAt,
+          records: serializeRecords(ALL_RECORDS)
+        }), true);
+      } catch (storageErr) {
+        console.error('storage.set failed', storageErr);
+        setStatus('File processed successfully, but saving for the team failed (visible only in this session) — ' + (storageErr.message || ''), 'error');
+      }
+
+      initFilters();
+      renderAll();
+      showDashboard(file.name, uploadedAt, false);
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message || 'An error occurred while reading the file', 'error');
+    }
+  };
+  reader.onerror = function () { setStatus('Could not read the file', 'error'); };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ===================== SERIALIZE / DESERIALIZE (for storage) ===================== */
+function serializeRecords(records) {
+  return records.map(r => ({
+    ...r,
+    rfqDate: r.rfqDate ? r.rfqDate.toISOString() : null,
+    quoteDate: r.quoteDate ? r.quoteDate.toISOString() : null,
+    nomDate: r.nomDate ? r.nomDate.toISOString() : null
+  }));
+}
+
+function deserializeRecords(records) {
+  return records.map(r => ({
+    ...r,
+    rfqDate: r.rfqDate ? new Date(r.rfqDate) : null,
+    quoteDate: r.quoteDate ? new Date(r.quoteDate) : null,
+    nomDate: r.nomDate ? new Date(r.nomDate) : null
+  }));
+}
+
+/* ===================== LIVE UPDATES (shared data, near-real-time) =====================
+   window.storage has no push/subscribe mechanism, so "real-time" here means polling:
+   while the dashboard is open, periodically re-check the shared record for a newer
+   uploadedAt than what's on screen. If a teammate uploaded a new file, pull it in
+   automatically (preserving the viewer's current filter selections) and show a toast. */
+function startPolling() {
+  stopPolling();
+  if (typeof window.storage === 'undefined') return;
+  pollTimer = setInterval(checkForUpdates, POLL_INTERVAL_MS);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// Re-check immediately when the tab becomes visible again, instead of waiting
+// for the next interval tick — covers the common "switched tabs, came back" case.
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden && document.getElementById('dashboard').style.display === 'block') {
+    checkForUpdates();
+  }
+});
+
+async function checkForUpdates() {
+  if (document.hidden || typeof window.storage === 'undefined') return;
+  let stored;
+  try {
+    stored = await window.storage.get(STORAGE_KEY, true);
+  } catch (err) {
+    return; // nothing saved yet, or a transient error — just try again next cycle
+  }
+  if (!stored || !stored.value) return;
+
+  let parsed;
+  try { parsed = JSON.parse(stored.value); } catch (err) { return; }
+  if (!parsed.uploadedAt || parsed.uploadedAt === currentDataVersion) return; // no change
+
+  // A teammate uploaded newer data. Apply it, but keep whatever the viewer is
+  // currently looking at (month filter selections) instead of resetting to "all".
+  const prevFilters = {
+    rfqMonthFilter: document.getElementById('rfqMonthFilter').value,
+    quoteMonthFilter: document.getElementById('quoteMonthFilter').value,
+    nomMonthFilter: document.getElementById('nomMonthFilter').value
+  };
+  try {
+    ALL_RECORDS = deserializeRecords(parsed.records || []);
+  } catch (err) {
+    console.error('Failed to apply live update:', err);
+    return;
+  }
+  deriveSubsets();
+  initFilters();
+  Object.keys(prevFilters).forEach(function (id) {
+    const el = document.getElementById(id);
+    const stillExists = Array.prototype.some.call(el.options, function (o) { return o.value === prevFilters[id]; });
+    if (stillExists) el.value = prevFilters[id];
+  });
+  renderAll();
+
+  currentDataVersion = parsed.uploadedAt;
+  currentFileName = parsed.fileName || currentFileName;
+  const when = new Date(parsed.uploadedAt);
+  document.getElementById('metaInfo').textContent =
+    'Latest data uploaded by the team  ·  File: ' + currentFileName + '  ·  Last updated: ' + when.toLocaleString('en-US') +
+    '  ·  ' + ALL_RECORDS.length.toLocaleString() + ' data rows';
+  showLiveUpdateToast('New data from the team — the dashboard has been updated automatically');
+}
+
+let toastTimer = null;
+function showLiveUpdateToast(msg) {
+  const el = document.getElementById('liveUpdateToast');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.classList.remove('show'); }, 4000);
+}
+
+function deriveSubsets() {
+  rfqRecords = ALL_RECORDS.filter(r => r.type && r.rfqDate);
+  quoteRecords = ALL_RECORDS.filter(r => r.type && r.quoteDate && r.status);
+  issuingRecords = quoteRecords.filter(r => r.status === 'Issuing Quote');
+  alreadyRecords = quoteRecords.filter(r => ALREADY_STATUSES.includes(r.status));
+  nominationRecords = ALL_RECORDS.filter(r => r.type && r.status === 'Nomination' && r.nomDate);
+}
+
+/* ===================== INIT: load existing shared data on open ===================== */
+async function init() {
+  // Wait for the CDN libraries (with multi-source fallback) to finish trying to
+  // load before deciding anything — they load asynchronously now, so checking
+  // typeof XLSX/Chart before this resolves would give a false "not loaded" result.
+  const libStatus = await window.__libsReady;
+  applyChartTheme();
+  libsAreReady = libStatus.xlsxOk && libStatus.chartOk;
+  setDropZoneEnabled(libsAreReady);
+
+  // A file downloaded via "Download file with data" carries its data embedded right
+  // in the page (see buildStandaloneFileWithData()). That takes priority over shared
+  // storage — it's what makes the exported file work standalone, no upload needed.
+  if (window.__EMBEDDED_DATA__) {
+    if (!libsAreReady) {
+      reportLibFailure(true, libStatus);
+      return;
+    }
+    try {
+      const embedded = window.__EMBEDDED_DATA__;
+      ALL_RECORDS = deserializeRecords(embedded.records || []);
+      deriveSubsets();
+      initFilters();
+      renderAll();
+      showDashboard(embedded.fileName || 'Unknown file name', embedded.uploadedAt || new Date().toISOString(), true);
+    } catch (err) {
+      console.error('Failed to load embedded data:', err);
+      showUploadScreen();
+      setStatus('The data embedded in this file is corrupted or unreadable. Please upload a new file', 'error');
+    }
+    return;
+  }
+
+  if (typeof window.storage === 'undefined') {
+    // Not running inside an Artifact runtime with storage support — go straight to upload.
+    showUploadScreen();
+    if (!libsAreReady) reportLibFailure(false);
+    return;
+  }
+
+  let stored = null;
+  try {
+    stored = await window.storage.get(STORAGE_KEY, true);
+  } catch (err) {
+    // Non-existent key throws per the storage API — this just means no one has uploaded yet.
+    console.log('No existing shared data found:', err && err.message);
+  }
+
+  if (!stored || !stored.value) {
+    showUploadScreen();
+    if (!libsAreReady) reportLibFailure(false);
+    return;
+  }
+
+  // We have shared data saved by the team — but rendering it needs the CDN
+  // libraries. Report that clearly instead of silently falling back to upload
+  // (which would look like the team's data disappeared).
+  if (!libsAreReady) {
+    reportLibFailure(true, libStatus);
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(stored.value);
+    ALL_RECORDS = deserializeRecords(parsed.records || []);
+    deriveSubsets();
+    initFilters();
+    renderAll();
+    showDashboard(parsed.fileName || 'Unknown file name', parsed.uploadedAt || new Date().toISOString(), true);
+  } catch (err) {
+    console.error('Failed to load stored data, asking for re-upload:', err);
+    showUploadScreen();
+    setStatus('The saved data is corrupted or unreadable. Please upload a new file', 'error');
+  }
+}
+
+// Shows a library-load-failure message with a retry button. `onLoadingScreen`
+// picks whether it renders on the loading screen (shared data exists) or the
+// upload screen's status area.
+function reportLibFailure(onLoadingScreen, libStatus) {
+  const names = libStatus ? missingLibNames(libStatus) : 'XLSX (SheetJS) and/or Chart.js';
+  const html = 'Failed to load ' + names + ' — this may be a temporary internet issue, or the network/app used to open this file is blocking outbound connections. ' +
+    'Please check your internet connection and click "Retry", or open this file with a regular browser (Chrome, Edge) instead of another app\'s preview window<br>' +
+    '<button class="btn" id="retryLibBtn" style="margin-top:10px;">Retry</button>';
+  if (onLoadingScreen) {
+    document.querySelector('#loadingScreen p').innerHTML = html;
+    document.querySelector('#loadingScreen .spinner').style.display = 'none';
+  } else {
+    statusMsg.innerHTML = html;
+    statusMsg.className = 'status-msg error';
+  }
+  const retryBtn = document.getElementById('retryLibBtn');
+  if (retryBtn) retryBtn.addEventListener('click', function () { location.reload(); });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+function locateHeaderRow(rows) {
+  const limit = Math.min(rows.length, 40);
+  for (let i = 0; i < limit; i++) {
+    const row = rows[i];
+    if (row && typeof row[COL.TYPE] === 'string' && row[COL.TYPE].trim().toLowerCase() === 'type') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function processRows(rows) {
+  ALL_RECORDS = [];
+  rows.forEach(row => {
+    if (!row || row.length === 0) return;
+    const type = normalizeType(row[COL.TYPE]);
+    const section = normalizeSection(row[COL.SECTION]);
+    const rfqNo = row[COL.RFQ_NO] ? String(row[COL.RFQ_NO]).trim() : null;
+    const customer = row[COL.CUSTOMER] ? String(row[COL.CUSTOMER]).trim() : null;
+    const sales = row[COL.SALES] ? String(row[COL.SALES]).trim() : null;
+    const partNo = row[COL.PART_NO] ? String(row[COL.PART_NO]).trim() : null;
+    const partName = row[COL.PART_NAME] ? String(row[COL.PART_NAME]).trim() : null;
+    const model = row[COL.MODEL] ? String(row[COL.MODEL]).trim() : null;
+    const oem = row[COL.OEM] ? String(row[COL.OEM]).trim() : null;
+    const rfqDate = isDateInDisplayRange(shiftExcelMonthDate(row[COL.MONTH_RFQ])) ? shiftExcelMonthDate(row[COL.MONTH_RFQ]) : null;
+    const quoteDate = isDateInDisplayRange(shiftExcelMonthDate(row[COL.MONTH_QUOTE])) ? shiftExcelMonthDate(row[COL.MONTH_QUOTE]) : null;
+    const nomDate = isDateInDisplayRange(shiftExcelMonthDate(row[COL.MONTH_NOM])) ? shiftExcelMonthDate(row[COL.MONTH_NOM]) : null;
+    const status = normalizeStatus(row[COL.STATUS]);
+    const remarkStatus = row[COL.REMARK_STATUS] ? String(row[COL.REMARK_STATUS]).trim() : null;
+    const value = toNumber(row[COL.VALUE]);
+    ALL_RECORDS.push({ type, section, rfqNo, customer, sales, partNo, partName, model, oem, rfqDate, quoteDate, nomDate, status, remarkStatus, value });
+  });
+
+  deriveSubsets();
+}
+
+/* ===================== FILTERS ===================== */
+function uniqueMonthKeys(recs, field) {
+  const set = new Set();
+  recs.forEach(r => set.add(monthKey(r[field])));
+  return Array.from(set).sort();
+}
+
+function buildMonthOptions(selectEl, keys) {
+  selectEl.innerHTML = '';
+  const optAll = document.createElement('option');
+  optAll.value = 'all';
+  optAll.textContent = 'All months (full year)';
+  selectEl.appendChild(optAll);
+  keys.forEach(k => {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = monthLabelFromKey(k);
+    selectEl.appendChild(opt);
+  });
+  selectEl.value = 'all';
+}
+
+function initFilters() {
+  buildMonthOptions(document.getElementById('rfqMonthFilter'), uniqueMonthKeys(rfqRecords, 'rfqDate'));
+  buildMonthOptions(document.getElementById('quoteMonthFilter'), uniqueMonthKeys(quoteRecords, 'quoteDate'));
+  buildMonthOptions(document.getElementById('nomMonthFilter'), uniqueMonthKeys(nominationRecords, 'nomDate'));
+}
+
+// Wired once at startup — the <select> elements persist across re-uploads within
+// the same session, so listeners must not be re-attached on every initFilters() call.
+let filterEventsWired = false;
+function wireFilterEventsOnce() {
+  if (filterEventsWired) return;
+  filterEventsWired = true;
+  document.getElementById('rfqMonthFilter').addEventListener('change', updateSection1);
+  document.getElementById('quoteMonthFilter').addEventListener('change', () => { updateSection2(); updateSection3(); });
+  document.getElementById('nomMonthFilter').addEventListener('change', () => { updateSection4(); updateSection5(); updateSection67(); });
+}
+wireFilterEventsOnce();
+
+function renderAll() {
+  updateSection1();
+  updateSection2();
+  updateSection3();
+  updateSection4();
+  updateSection5();
+  updateSection67();
+  updateSection8();
+
+  // Extra safety net on top of the per-chart delay in drawChart(): some embedded
+  // viewers take longer than that to finish laying out the page. This catches
+  // any chart that's still blank a bit later, at effectively no cost elsewhere.
+  setTimeout(() => {
+    Object.values(charts).forEach(c => { if (c) { c.resize(); c.update(); } });
+  }, 800);
+}
+
+/* ===================== CHART BUILDERS ===================== */
+function drawChart(id, config) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, config);
+  // Some embedded/sandboxed viewers (e.g. Microsoft Teams' file preview) don't
+  // report the correct container size to Chart.js on first paint, leaving the
+  // canvas blank even though the chart object exists. A harmless delayed
+  // resize+update fixes it there without changing anything in a normal browser.
+  setTimeout(() => { if (charts[id]) { charts[id].resize(); charts[id].update(); } }, 300);
+}
+
+// Every chart-config builder below accepts an optional trailing `onClick(index, datasetIndex)`
+// callback. When provided, clicking a bar/segment calls it and the cursor becomes a pointer
+// while hovering a clickable element.
+function onHoverPointer(evt) {
+  if (evt.native && evt.native.target) evt.native.target.style.cursor = 'pointer';
+}
+
+function doughnutConfig(counts, onClick) {
+  return {
+    type: 'doughnut',
+    data: {
+      labels: ['2W', '4W', 'OTHER'],
+      datasets: [{
+        data: [counts['2W'], counts['4W'], counts['OTHER']],
+        backgroundColor: [TYPE_COLORS['2W'], TYPE_COLORS['4W'], TYPE_COLORS['OTHER']],
+        borderColor: '#16212c', borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } },
+      onClick: onClick ? chartClickHandler(onClick) : undefined,
+      onHover: onClick ? onHoverPointer : undefined
+    }
+  };
+}
+
+function stackedTypeBarConfig(labels, dataArr, onClick) {
+  return {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: ['2W', '4W', 'OTHER'].map(t => ({
+        label: t, data: dataArr.map(d => d[t]), backgroundColor: TYPE_COLORS[t], stack: 's', borderRadius: 3, maxBarThickness: 34
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } },
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(234,241,246,0.06)' } }
+      },
+      onClick: onClick ? chartClickHandler(onClick) : undefined,
+      onHover: onClick ? onHoverPointer : undefined
+    }
+  };
+}
+
+function groupedBarConfig(labels, series, onClick) {
+  return {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: series.map(s => ({ label: s.label, data: s.data, backgroundColor: s.color, borderRadius: 3, maxBarThickness: 46 }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, grid: { color: 'rgba(234,241,246,0.06)' } }
+      },
+      onClick: onClick ? chartClickHandler(onClick) : undefined,
+      onHover: onClick ? onHoverPointer : undefined
+    }
+  };
+}
+
+// Long company/person names were getting visually clipped on the left edge of
+// horizontal bar charts (Chart.js doesn't wrap or shrink-to-fit axis labels on
+// its own). Wrapping into short lines fixes it for any label length/device,
+// rather than just nudging the font size and hoping it's narrow enough.
+// Long company/person names were getting visually clipped on the left edge of
+// horizontal bar charts (Chart.js doesn't shrink-to-fit or wrap axis labels on
+// its own). Rather than wrapping to two lines, shrink the font per-label based
+// on its length so everything stays on one line and still fits.
+function tickFontSizeForLabel(label) {
+  const len = String(label == null ? '' : label).length;
+  if (len > 44) return 7;
+  if (len > 34) return 7.5;
+  if (len > 26) return 8.5;
+  if (len > 18) return 9.5;
+  return 10.5;
+}
+
+function horizontalBarConfig(labels, data, colors, valueSuffix, onClick) {
+  // Leave headroom past the longest bar so the value label drawn just outside
+  // it (see horizontalBarValueLabelsPlugin) never gets clipped by the canvas edge.
+  const maxVal = Math.max(0, ...data.map(v => v || 0));
+  return {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 4, maxBarThickness: 22 }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 46 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => fmtMB(ctx.parsed.x) + ' ' + (valueSuffix || 'MB') } }
+      },
+      scales: {
+        x: { beginAtZero: true, suggestedMax: maxVal * 1.2 || undefined, grid: { color: 'rgba(234,241,246,0.06)' } },
+        y: {
+          grid: { display: false },
+          ticks: { font: (ctx) => ({ size: tickFontSizeForLabel(ctx.tick && ctx.tick.label) }) }
+        }
+      },
+      onClick: onClick ? chartClickHandler(onClick) : undefined,
+      onHover: onClick ? onHoverPointer : undefined
+    }
+  };
+}
+
+/* ===================== ON-CHART VALUE LABELS (toggleable per section) ===================== */
+// Each chart-bearing section gets its own on/off flag so hiding numbers in one
+// section doesn't affect the others (matches how section 08's toggle works).
+let showNumbers = { sec1: true, sec2: true, sec3: true, sec5: true, sec67: true };
+
+function doughnutValueLabelsPlugin(getVisible, formatFn) {
+  return {
+    id: 'doughnutValueLabels',
+    afterDatasetsDraw(chart) {
+      if (!getVisible()) return;
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(0);
+      const data = chart.data.datasets[0].data;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      meta.data.forEach((arc, i) => {
+        const v = data[i];
+        if (!v) return;
+        const angle = (arc.startAngle + arc.endAngle) / 2;
+        const radius = (arc.innerRadius + arc.outerRadius) / 2;
+        const x = arc.x + Math.cos(angle) * radius;
+        const y = arc.y + Math.sin(angle) * radius;
+        drawOutlinedText(ctx, formatFn(v), x, y, '700 11px inherit', '#ffffff');
+      });
+      ctx.restore();
+    }
+  };
+}
+
+// Single-series vertical bar (one number per bar): value on top of each bar.
+function singleBarValueLabelsPlugin(getVisible, formatFn) {
+  return {
+    id: 'singleBarValueLabels',
+    afterDatasetsDraw(chart) {
+      if (!getVisible()) return;
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(0);
+      const data = chart.data.datasets[0].data;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      meta.data.forEach((bar, i) => {
+        const v = data[i];
+        if (!v) return;
+        drawOutlinedText(ctx, formatFn(v), bar.x, bar.y - 6, '700 11px inherit', '#eaf1f6');
+      });
+      ctx.restore();
+    }
+  };
+}
+
+// Grouped (side-by-side, not stacked) vertical bars: each bar gets its own value on top.
+function groupedBarValueLabelsPlugin(getVisible, formatFn) {
+  return {
+    id: 'groupedBarValueLabels',
+    afterDatasetsDraw(chart) {
+      if (!getVisible()) return;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      chart.data.datasets.forEach((dataset, dsIndex) => {
+        const meta = chart.getDatasetMeta(dsIndex);
+        if (meta.hidden) return;
+        meta.data.forEach((bar, i) => {
+          const v = dataset.data[i];
+          if (!v) return;
+          drawOutlinedText(ctx, formatFn(v), bar.x, bar.y - 5, '700 9.5px inherit', '#eaf1f6');
+        });
+      });
+      ctx.restore();
+    }
+  };
+}
+
+// Stacked vertical bars (e.g. 2W/4W/OTHER stacked per month): each segment's own
+// value inside/beside it (toggleable), PLUS a bold "total" chip on top of the
+// whole stack — same treatment as section 08's total chip, always shown.
+function stackedTotalsValueLabelsPlugin(getVisible, formatFn) {
+  return {
+    id: 'stackedTotalsValueLabels',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      ctx.save();
+      if (getVisible()) {
+        chart.data.datasets.forEach((dataset, dsIndex) => {
+          const meta = chart.getDatasetMeta(dsIndex);
+          if (meta.hidden) return;
+          meta.data.forEach((bar, i) => {
+            const v = dataset.data[i];
+            if (!v) return;
+            const h = Math.abs(bar.base - bar.y);
+            if (h >= 12) {
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              drawOutlinedText(ctx, formatFn(v), bar.x, (bar.y + bar.base) / 2, '700 8px inherit', '#eaf1f6');
+            } else {
+              // Too thin to fit inside — draw it just to the right of the bar
+              // at that segment's own height instead of skipping it entirely.
+              const halfWidth = (bar.width || 20) / 2;
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'middle';
+              drawOutlinedText(ctx, formatFn(v), bar.x + halfWidth + 6, (bar.y + bar.base) / 2, '700 8px inherit', '#eaf1f6');
+            }
+          });
+        });
+      }
+      ctx.textAlign = 'center';
+      const lastIdx = chart.data.datasets.length - 1;
+      const lastMeta = chart.getDatasetMeta(lastIdx);
+      lastMeta.data.forEach((bar, i) => {
+        let total = 0;
+        chart.data.datasets.forEach(ds => { total += (ds.data[i] || 0); });
+        if (!total) return;
+        drawTotalChip(ctx, formatFn(total), bar.x, bar.y - 14);
+      });
+      ctx.restore();
+    }
+  };
+}
+
+// Horizontal bars (e.g. per-salesperson, top model/customer): value just past the bar's end.
+function horizontalBarValueLabelsPlugin(getVisible, formatFn) {
+  return {
+    id: 'horizontalBarValueLabels',
+    afterDatasetsDraw(chart) {
+      if (!getVisible()) return;
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(0);
+      const data = chart.data.datasets[0].data;
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      meta.data.forEach((bar, i) => {
+        const v = data[i];
+        if (!v) return;
+        drawOutlinedText(ctx, formatFn(v), bar.x + 6, bar.y, '700 10px inherit', '#eaf1f6');
+      });
+      ctx.restore();
+    }
+  };
+}
+
+function wireNumberToggle(btnId, sectionKey, rerenderFn) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    showNumbers[sectionKey] = !showNumbers[sectionKey];
+    this.textContent = showNumbers[sectionKey] ? 'Hide numbers on bars' : 'Show numbers on bars';
+    rerenderFn();
+  });
+}
+
+/* ===================== SECTION 1: RFQ ===================== */
+function updateSection1() {
+  const sel = document.getElementById('rfqMonthFilter').value;
+  const filtered = sel === 'all' ? rfqRecords : rfqRecords.filter(r => monthKey(r.rfqDate) === sel);
+  const counts = emptyTypeCounter();
+  filtered.forEach(r => counts[r.type]++);
+
+  document.getElementById('rfqTotal').textContent = fmtInt(filtered.length);
+  document.getElementById('rfq2w').textContent = fmtInt(counts['2W']);
+  document.getElementById('rfq4w').textContent = fmtInt(counts['4W']);
+  document.getElementById('rfqOther').textContent = fmtInt(counts['OTHER']);
+
+  const rfqTypeOrder = ['2W', '4W', 'OTHER'];
+  const rfqTypeCfg = doughnutConfig(counts, (idx) => {
+    const type = rfqTypeOrder[idx];
+    openDetailModal('RFQ · ' + type, filtered.filter(r => r.type === type), { hideValue: true });
+  });
+  rfqTypeCfg.plugins = [doughnutValueLabelsPlugin(() => showNumbers.sec1, fmtInt)];
+  drawChart('rfqTypeChart', rfqTypeCfg);
+
+  const monthMap = {};
+  rfqRecords.forEach(r => {
+    const k = monthKey(r.rfqDate);
+    if (!monthMap[k]) monthMap[k] = emptyTypeCounter();
+    monthMap[k][r.type]++;
+  });
+  const keys = Object.keys(monthMap).sort();
+  const rfqMonthCfg = stackedTypeBarConfig(keys.map(monthLabelFromKey), keys.map(k => monthMap[k]), (idx, dsIdx) => {
+    const mKey = keys[idx];
+    const type = rfqTypeOrder[dsIdx];
+    openDetailModal('RFQ · ' + monthLabelFromKey(mKey) + ' · ' + type,
+      rfqRecords.filter(r => monthKey(r.rfqDate) === mKey && r.type === type), { hideValue: true });
+  });
+  rfqMonthCfg.plugins = [stackedTotalsValueLabelsPlugin(() => showNumbers.sec1, fmtInt)];
+  const rfqMonthMax = Math.max(0, ...keys.map(k => monthMap[k]['2W'] + monthMap[k]['4W'] + monthMap[k]['OTHER']));
+  rfqMonthCfg.options.layout = { padding: { top: 40 } };
+  rfqMonthCfg.options.scales.y.suggestedMax = rfqMonthMax * 1.22 || undefined;
+  drawChart('rfqMonthChart', rfqMonthCfg);
+}
+
+/* ===================== SECTION 2: QUOTE ===================== */
+function updateSection2() {
+  const sel = document.getElementById('quoteMonthFilter').value;
+  const filtered = sel === 'all' ? quoteRecords : quoteRecords.filter(r => monthKey(r.quoteDate) === sel);
+  const issuing = filtered.filter(r => r.status === 'Issuing Quote');
+  const already = filtered.filter(r => ALREADY_STATUSES.includes(r.status));
+
+  const totalCounts = emptyTypeCounter(); filtered.forEach(r => totalCounts[r.type]++);
+  const issuingCounts = emptyTypeCounter(); issuing.forEach(r => issuingCounts[r.type]++);
+  const alreadyCounts = emptyTypeCounter(); already.forEach(r => alreadyCounts[r.type]++);
+
+  document.getElementById('quoteTotal').textContent = fmtInt(filtered.length);
+  document.getElementById('quote2w').textContent = fmtInt(totalCounts['2W']);
+  document.getElementById('quote4w').textContent = fmtInt(totalCounts['4W']);
+  document.getElementById('quoteOther').textContent = fmtInt(totalCounts['OTHER']);
+
+  document.getElementById('issuingTotal').textContent = fmtInt(issuing.length);
+  document.getElementById('issuing2w').textContent = fmtInt(issuingCounts['2W']);
+  document.getElementById('issuing4w').textContent = fmtInt(issuingCounts['4W']);
+  document.getElementById('issuingOther').textContent = fmtInt(issuingCounts['OTHER']);
+
+  document.getElementById('alreadyTotal').textContent = fmtInt(already.length);
+  document.getElementById('already2w').textContent = fmtInt(alreadyCounts['2W']);
+  document.getElementById('already4w').textContent = fmtInt(alreadyCounts['4W']);
+  document.getElementById('alreadyOther').textContent = fmtInt(alreadyCounts['OTHER']);
+
+  const quoteTypeOrder = ['2W', '4W', 'OTHER'];
+  const quoteTypeCfg = groupedBarConfig(['2W', '4W', 'OTHER'], [
+    { label: 'Issuing Quote', data: ['2W', '4W', 'OTHER'].map(t => issuingCounts[t]), color: '#f5c451' },
+    { label: 'Already Quote', data: ['2W', '4W', 'OTHER'].map(t => alreadyCounts[t]), color: '#35c2a0' }
+  ], (idx, dsIdx) => {
+    const type = quoteTypeOrder[idx];
+    const group = dsIdx === 0 ? issuing : already;
+    const label = dsIdx === 0 ? 'Issuing Quote' : 'Already Quote';
+    openDetailModal('Quote · ' + label + ' · ' + type, group.filter(r => r.type === type));
+  });
+  quoteTypeCfg.plugins = [groupedBarValueLabelsPlugin(() => showNumbers.sec2, fmtInt)];
+  const quoteTypeMax = Math.max(0, ...['2W', '4W', 'OTHER'].map(t => Math.max(issuingCounts[t], alreadyCounts[t])));
+  quoteTypeCfg.options.layout = { padding: { top: 26 } };
+  quoteTypeCfg.options.scales.y.suggestedMax = quoteTypeMax * 1.25 || undefined;
+  drawChart('quoteTypeChart', quoteTypeCfg);
+
+  const monthMap = {};
+  quoteRecords.forEach(r => {
+    const k = monthKey(r.quoteDate);
+    if (!monthMap[k]) monthMap[k] = { issuing: 0, already: 0 };
+    if (r.status === 'Issuing Quote') monthMap[k].issuing++;
+    else if (ALREADY_STATUSES.includes(r.status)) monthMap[k].already++;
+  });
+  const keys = Object.keys(monthMap).sort();
+  const quoteMonthCfg = groupedBarConfig(keys.map(monthLabelFromKey), [
+    { label: 'Issuing Quote', data: keys.map(k => monthMap[k].issuing), color: '#f5c451' },
+    { label: 'Already Quote', data: keys.map(k => monthMap[k].already), color: '#35c2a0' }
+  ], (idx, dsIdx) => {
+    const mKey = keys[idx];
+    const label = dsIdx === 0 ? 'Issuing Quote' : 'Already Quote';
+    const recs = quoteRecords.filter(r => monthKey(r.quoteDate) === mKey &&
+      (dsIdx === 0 ? r.status === 'Issuing Quote' : ALREADY_STATUSES.includes(r.status)));
+    openDetailModal('Quote · ' + monthLabelFromKey(mKey) + ' · ' + label, recs);
+  });
+  quoteMonthCfg.plugins = [groupedBarValueLabelsPlugin(() => showNumbers.sec2, fmtInt)];
+  const quoteMonthMax = Math.max(0, ...keys.map(k => Math.max(monthMap[k].issuing, monthMap[k].already)));
+  quoteMonthCfg.options.layout = { padding: { top: 26 } };
+  quoteMonthCfg.options.scales.y.suggestedMax = quoteMonthMax * 1.25 || undefined;
+  drawChart('quoteMonthChart', quoteMonthCfg);
+}
+
+/* ===================== SECTION 3: STATUS BREAKDOWN ===================== */
+function updateSection3() {
+  const sel = document.getElementById('quoteMonthFilter').value;
+  const filtered = sel === 'all' ? alreadyRecords : alreadyRecords.filter(r => monthKey(r.quoteDate) === sel);
+
+  const byStatus = {};
+  ALREADY_STATUSES.forEach(s => byStatus[s] = { total: 0, ...emptyTypeCounter() });
+  filtered.forEach(r => { byStatus[r.status].total++; byStatus[r.status][r.type]++; });
+
+  drawChart('statusChart', {
+    type: 'bar',
+    data: {
+      labels: ALREADY_STATUSES,
+      datasets: [{
+        data: ALREADY_STATUSES.map(s => byStatus[s].total),
+        backgroundColor: ALREADY_STATUSES.map(s => STATUS_COLORS[s]),
+        borderRadius: 4, maxBarThickness: 34
+      }]
+    },
+    plugins: [singleBarValueLabelsPlugin(() => showNumbers.sec3, fmtInt)],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 26 } },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, suggestedMax: Math.max(0, ...ALREADY_STATUSES.map(s => byStatus[s].total)) * 1.25 || undefined, grid: { color: 'rgba(234,241,246,0.06)' } }
+      },
+      onClick: chartClickHandler((idx) => {
+        const status = ALREADY_STATUSES[idx];
+        openDetailModal('Already Quote · ' + status, filtered.filter(r => r.status === status), { showRemark: true });
+      }),
+      onHover: onHoverPointer
+    }
+  });
+
+  const tbody = document.querySelector('#statusTable tbody');
+  tbody.innerHTML = '';
+  ALREADY_STATUSES.forEach(s => {
+    const row = byStatus[s];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><span class="dot" style="background:${STATUS_COLORS[s]}"></span>${s}</td>
+      <td>${fmtInt(row.total)}</td><td>${fmtInt(row['2W'])}</td><td>${fmtInt(row['4W'])}</td><td>${fmtInt(row['OTHER'])}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ===================== SECTION 4: NOMINATION ===================== */
+function updateSection4() {
+  const sel = document.getElementById('nomMonthFilter').value;
+  let filtered = sel === 'all' ? nominationRecords : nominationRecords.filter(r => monthKey(r.nomDate) === sel);
+  if (salesTeamFilter !== 'all') filtered = filtered.filter(r => r.section === salesTeamFilter);
+
+  const counts = emptyTypeCounter();
+  const values = { '2W': 0, '4W': 0, 'OTHER': 0 };
+  filtered.forEach(r => { counts[r.type]++; values[r.type] += r.value; });
+  const totalCount = filtered.length;
+  const totalValue = values['2W'] + values['4W'] + values['OTHER'];
+
+  document.getElementById('nomTotalCount').innerHTML = fmtInt(totalCount) + ' <small>jobs</small>';
+  document.getElementById('nomTotalValue').innerHTML = fmtMB(totalValue) + ' <small>MB</small>';
+  document.getElementById('nom2wCount').innerHTML = fmtInt(counts['2W']) + ' <small>jobs</small>';
+  document.getElementById('nom2wValue').innerHTML = fmtMB(values['2W']) + ' <small>MB</small>';
+  document.getElementById('nom4wCount').innerHTML = fmtInt(counts['4W']) + ' <small>jobs</small>';
+  document.getElementById('nom4wValue').innerHTML = fmtMB(values['4W']) + ' <small>MB</small>';
+  document.getElementById('nomOtherCount').innerHTML = fmtInt(counts['OTHER']) + ' <small>jobs</small>';
+  document.getElementById('nomOtherValue').innerHTML = fmtMB(values['OTHER']) + ' <small>MB</small>';
+}
+
+/* ===================== SECTION 5: SALES PERFORMANCE ===================== */
+let salesTeamFilter = 'all';
+
+function updateSection5() {
+  const sel = document.getElementById('nomMonthFilter').value;
+  let filtered = sel === 'all' ? nominationRecords : nominationRecords.filter(r => monthKey(r.nomDate) === sel);
+  if (salesTeamFilter !== 'all') filtered = filtered.filter(r => r.section === salesTeamFilter);
+
+  const bySales = {};
+  filtered.forEach(r => {
+    if (!r.sales) return;
+    if (!bySales[r.sales]) bySales[r.sales] = { value: 0, section: r.section };
+    bySales[r.sales].value += r.value;
+    if (!bySales[r.sales].section && r.section) bySales[r.sales].section = r.section;
+  });
+  const entries = Object.entries(bySales).sort((a, b) => b[1].value - a[1].value);
+
+  const labels = entries.map(e => e[0] + (e[1].section ? '  [' + e[1].section + ']' : ''));
+  const data = entries.map(e => e[1].value);
+  const colors = entries.map(e => e[1].section === 'S1' ? '#4f8ef7' : (e[1].section === 'S2' ? '#35c2a0' : '#8a94a6'));
+
+  const wrap = document.querySelector('#salesChart').parentElement;
+  wrap.style.height = Math.max(280, entries.length * 34) + 'px';
+
+  if (entries.length === 0) {
+    drawChart('salesChart', horizontalBarConfig(['No data'], [0], ['#33475a']));
+  } else {
+    const salesCfg = horizontalBarConfig(labels, data, colors, null, (idx) => {
+      const entry = entries[idx];
+      if (!entry) return;
+      const salesName = entry[0];
+      openDetailModal('Nomination · ' + salesName, filtered.filter(r => r.sales === salesName));
+    });
+    salesCfg.plugins = [horizontalBarValueLabelsPlugin(() => showNumbers.sec5, (v) => fmtMB(v))];
+    drawChart('salesChart', salesCfg);
+  }
+}
+
+document.getElementById('salesTeamToggle').addEventListener('click', function (e) {
+  const btn = e.target.closest('button[data-team]');
+  if (!btn) return;
+  salesTeamFilter = btn.dataset.team;
+  this.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+  updateSection4();
+  updateSection5();
+});
+
+/* ===================== SECTION 6 & 7: TOP MODEL / CUSTOMER ===================== */
+function topN(filtered, field, n) {
+  const map = {};
+  filtered.forEach(r => {
+    const key = r[field];
+    if (!key) return;
+    map[key] = (map[key] || 0) + r.value;
+  });
+  return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
+function updateSection67() {
+  const sel = document.getElementById('nomMonthFilter').value;
+  const filtered = sel === 'all' ? nominationRecords : nominationRecords.filter(r => monthKey(r.nomDate) === sel);
+
+  const models = topN(filtered, 'model', 10).reverse();
+  const customers = topN(filtered, 'customer', 10).reverse();
+
+  if (models.length === 0) {
+    drawChart('topModelChart', horizontalBarConfig(['No data'], [0], ['#33475a']));
+  } else {
+    const modelCfg = horizontalBarConfig(models.map(m => m[0]), models.map(m => m[1]),
+      models.map(() => '#ff8a3d'), null, (idx) => {
+        const m = models[idx];
+        if (!m) return;
+        openDetailModal('Nomination · Model: ' + m[0], filtered.filter(r => r.model === m[0]));
+      });
+    modelCfg.plugins = [horizontalBarValueLabelsPlugin(() => showNumbers.sec67, (v) => fmtMB(v))];
+    drawChart('topModelChart', modelCfg);
+  }
+  if (customers.length === 0) {
+    drawChart('topCustomerChart', horizontalBarConfig(['No data'], [0], ['#33475a']));
+  } else {
+    const custCfg = horizontalBarConfig(customers.map(c => c[0]), customers.map(c => c[1]),
+      customers.map(() => '#4f8ef7'), null, (idx) => {
+        const c = customers[idx];
+        if (!c) return;
+        openDetailModal('Nomination · Customer: ' + c[0], filtered.filter(r => r.customer === c[0]));
+      });
+    custCfg.plugins = [horizontalBarValueLabelsPlugin(() => showNumbers.sec67, (v) => fmtMB(v))];
+    drawChart('topCustomerChart', custCfg);
+  }
+}
+
+wireNumberToggle('toggleNumbers_sec1', 'sec1', updateSection1);
+wireNumberToggle('toggleNumbers_sec2', 'sec2', updateSection2);
+wireNumberToggle('toggleNumbers_sec3', 'sec3', updateSection3);
+wireNumberToggle('toggleNumbers_sec5', 'sec5', updateSection5);
+wireNumberToggle('toggleNumbers_sec67', 'sec67', updateSection67);
+
+/* ===================== SECTION 8: CUMULATIVE MONTHLY TREND (with Plan line) ===================== */
+// Business KPI targets per team (matches the Dec value of each Plan curve below).
+const KPI_TARGETS = { S1: 172, S2: 90 };
+let kpiTeamFilter = 'ALL'; // 'ALL' | 'S1' | 'S2'
+
+// Monthly cumulative Plan (target-to-date) values for the full year — these are
+// the numbers the white dashed line traces, month by month, per team.
+const PLAN_S1 = [5, 15, 30, 55, 85, 125, 127, 133, 135, 145, 155, 172];
+const PLAN_S2 = [5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90];
+const PLAN_ALL = PLAN_S1.map((v, i) => v + PLAN_S2[i]);
+const ALL_YEAR_KEYS = Array.from({ length: 12 }, (_, i) => '2026-' + String(i + 1).padStart(2, '0'));
+
+function planDataForFilter(filter) {
+  if (filter === 'S1') return PLAN_S1;
+  if (filter === 'S2') return PLAN_S2;
+  return PLAN_ALL;
+}
+
+document.getElementById('kpiS1Text').textContent = fmtMB(KPI_TARGETS.S1);
+document.getElementById('kpiS2Text').textContent = fmtMB(KPI_TARGETS.S2);
+
+document.getElementById('kpiTeamToggle').addEventListener('click', (e) => {
+  const btn = e.target.closest('.team-toggle-btn');
+  if (!btn) return;
+  kpiTeamFilter = btn.dataset.team;
+  document.querySelectorAll('#kpiTeamToggle .team-toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
+  updateSection8();
+});
+
+document.getElementById('toggleSegmentNumbersBtn').addEventListener('click', function () {
+  showSegmentNumbers = !showSegmentNumbers;
+  this.textContent = showSegmentNumbers ? 'Hide numbers on bars' : 'Show numbers on bars';
+  updateSection8();
+});
+
+// Labeling rules:
+// - A bar with no "previous cumulative" segment (i.e. the first month with any
+//   data — a single solid-color bar) gets just its one number, on top.
+// - Any bar with both segments gets each segment's own value moved OUTSIDE the
+//   bar (previous-cumulative to the left, this-month to the right), while the
+//   running total still sits above the whole bar, bold and larger.
+// - Months with no actual data yet (null) are skipped entirely — only the Plan
+//   line continues through them.
+// Draws text with a dark outline behind a light fill so it stays legible no
+// matter what's behind it — dark chart background, a bright bar fill, or the
+// dashed Plan line all crossing the same area.
+function drawOutlinedText(ctx, text, x, y, font, fillColor) {
+  ctx.font = font;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(10, 15, 20, 0.9)';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = fillColor || '#ffffff';
+  ctx.fillText(text, x, y);
+}
+
+// Draws the running-total label with a small rounded background chip behind
+// it, so it reads as the "headline" number at a glance versus the smaller
+// in-bar segment numbers.
+function drawTotalChip(ctx, text, x, bottomY) {
+  const font = '800 14px inherit';
+  ctx.font = font;
+  const padX = 7, padY = 4, textH = 13;
+  const w = ctx.measureText(text).width + padX * 2;
+  const h = textH + padY * 2;
+  const chipX = x - w / 2;
+  const chipY = bottomY - h;
+  ctx.fillStyle = 'rgba(15, 23, 32, 0.92)';
+  ctx.strokeStyle = '#ff8a3d';
+  ctx.lineWidth = 1.25;
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(chipX, chipY, w, h, 6);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.fillRect(chipX, chipY, w, h);
+    ctx.strokeRect(chipX, chipY, w, h);
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(text, x, bottomY - padY + 1);
+}
+
+// Lets the "Hide/Show numbers on bars" button under the chart toggle just the
+// in-bar segment numbers on/off — the total chip and Plan labels stay either way.
+let showSegmentNumbers = true;
+
+const stackedValueLabelsPlugin = {
+  id: 'stackedValueLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const prevMeta = chart.getDatasetMeta(0);
+    const curMeta = chart.getDatasetMeta(1);
+    const planMeta = chart.getDatasetMeta(2);
+    ctx.save();
+    ctx.textAlign = 'center';
+
+    // Track the y-position of every small "spills outside the bar" label
+    // (the thin-segment numbers drawn to the right of a bar), keyed by bar
+    // index, so the Plan label below can steer clear of them instead of
+    // landing on top — whichever color happened to be underneath.
+    const rightLabelYByIndex = {};
+    const registerRightLabel = (i, y) => {
+      (rightLabelYByIndex[i] = rightLabelYByIndex[i] || []).push(y);
+    };
+
+    if (!prevMeta.hidden && !curMeta.hidden) {
+      const prevData = chart.data.datasets[0].data;
+      const curData = chart.data.datasets[1].data;
+
+      curMeta.data.forEach((bar, i) => {
+        const prevVal = prevData[i];
+        const curVal = curData[i];
+        if (curVal === null || curVal === undefined) return; // no data this month yet
+        const total = (prevVal || 0) + curVal;
+        const singleColor = !prevVal; // first data month — no cumulative segment beneath it
+
+        if (singleColor) {
+          drawTotalChip(ctx, fmtMB(total), bar.x, bar.y - 16);
+        } else {
+          const prevBar = prevMeta.data[i];
+          const halfWidth = (bar.width || 20) / 2;
+          const SEG_FONT = '700 8px inherit';
+          const MIN_INSIDE_HEIGHT = 12;
+
+          if (showSegmentNumbers) {
+            const prevHeight = Math.abs(prevBar.base - prevBar.y);
+            ctx.textBaseline = 'middle';
+            if (prevHeight >= MIN_INSIDE_HEIGHT) {
+              ctx.textAlign = 'center';
+              drawOutlinedText(ctx, fmtMB(prevVal), bar.x, (prevBar.y + prevBar.base) / 2, SEG_FONT, '#eaf1f6');
+            } else {
+              ctx.textAlign = 'left';
+              const prevLabelY = (prevBar.y + prevBar.base) / 2;
+              drawOutlinedText(ctx, fmtMB(prevVal), bar.x + halfWidth + 8, prevLabelY, SEG_FONT, '#bcd6ff');
+              registerRightLabel(i, prevLabelY);
+            }
+
+            const curHeight = Math.abs(bar.base - bar.y);
+            if (curHeight >= MIN_INSIDE_HEIGHT) {
+              ctx.textAlign = 'center';
+              drawOutlinedText(ctx, fmtMB(curVal), bar.x, (bar.y + bar.base) / 2, SEG_FONT, '#eaf1f6');
+            } else {
+              ctx.textAlign = 'left';
+              const curLabelY = (bar.y + bar.base) / 2;
+              drawOutlinedText(ctx, fmtMB(curVal), bar.x + halfWidth + 8, curLabelY, SEG_FONT, '#ffd3ad');
+              registerRightLabel(i, curLabelY);
+            }
+          }
+
+          drawTotalChip(ctx, fmtMB(total), bar.x, bar.y - 16);
+        }
+      });
+    }
+
+    // Plan value for every month — pushed clear of the bar's right edge (not just
+    // offset from the point) so it never overlaps the bar underneath it, however
+    // tall that bar is relative to the Plan line at that point.
+    if (planMeta && !planMeta.hidden) {
+      const planData = chart.data.datasets[2].data;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const MIN_LABEL_GAP = 13; // px — roughly one line of the 9.5px label font
+      planMeta.data.forEach((point, i) => {
+        const v = planData[i];
+        if (v === null || v === undefined) return;
+        const barEl = curMeta.data[i];
+        const barHalfWidth = barEl ? (barEl.width || 20) / 2 : 10;
+        let y = point.y;
+        (rightLabelYByIndex[i] || []).forEach(neighborY => {
+          if (Math.abs(y - neighborY) < MIN_LABEL_GAP) {
+            // Push the Plan label clear of the segment label it would
+            // otherwise sit on top of — up if it started above, down if below.
+            y = neighborY + (y <= neighborY ? -MIN_LABEL_GAP : MIN_LABEL_GAP);
+          }
+        });
+        drawOutlinedText(ctx, fmtMB(v), point.x + barHalfWidth + 8, y, '700 9.5px inherit', '#9be8a8');
+      });
+    }
+
+    ctx.restore();
+  }
+};
+
+function updateSection8() {
+  const teamFiltered = kpiTeamFilter === 'ALL' ? nominationRecords : nominationRecords.filter(r => r.section === kpiTeamFilter);
+
+  const monthMap = {};
+  teamFiltered.forEach(r => {
+    const k = monthKey(r.nomDate);
+    monthMap[k] = (monthMap[k] || 0) + r.value;
+  });
+
+  // Always show the full 12 months of the year — months with no data yet get a
+  // null bar (nothing drawn) but still show the Plan line passing through them.
+  let running = 0;
+  const prevValues = [];
+  const currentValues = [];
+  ALL_YEAR_KEYS.forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(monthMap, key)) {
+      prevValues.push(running);
+      currentValues.push(monthMap[key]);
+      running += monthMap[key];
+    } else {
+      prevValues.push(null);
+      currentValues.push(null);
+    }
+  });
+  document.getElementById('cumulativeTotalValue').innerHTML = fmtMB(running) + ' <small>MB</small>';
+
+  const planData = planDataForFilter(kpiTeamFilter);
+  const yMax = Math.max(planData[planData.length - 1], running, 1) * 1.15;
+
+  drawChart('cumulativeTrendChart', {
+    type: 'bar',
+    data: {
+      labels: ALL_YEAR_KEYS.map(monthLabelFromKey),
+      datasets: [
+        {
+          label: 'Prior cumulative (MB.)', data: prevValues, stack: 'total',
+          backgroundColor: '#4f8ef7', borderRadius: 4, maxBarThickness: 34
+        },
+        {
+          label: 'This month (MB.)', data: currentValues, stack: 'total',
+          backgroundColor: '#ff8a3d', borderRadius: 4, maxBarThickness: 34
+        },
+        {
+          type: 'line', label: 'Plan (MB.)', data: planData,
+          borderColor: '#9be8a8', borderWidth: 2, borderDash: [6, 4],
+          pointRadius: 0, pointHitRadius: 0, fill: false, tension: 0, order: 0
+        }
+      ]
+    },
+    plugins: [stackedValueLabelsPlugin],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 40, left: 44, right: 44 } },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: {
+          stacked: true, beginAtZero: true, position: 'left',
+          suggestedMax: yMax,
+          title: { display: true, text: 'MB.' }, grid: { color: 'rgba(234,241,246,0.06)' }
+        }
+      },
+      onClick: chartClickHandler((idx, dsIdx) => {
+        if (dsIdx === 2) return; // Plan line isn't clickable data
+        const mKey = ALL_YEAR_KEYS[idx];
+        if (dsIdx === 1) {
+          openDetailModal('Nomination · ' + monthLabelFromKey(mKey), teamFiltered.filter(r => monthKey(r.nomDate) === mKey));
+        } else {
+          const uptoKeys = ALL_YEAR_KEYS.slice(0, idx);
+          openDetailModal('Nomination · Cumulative through before ' + monthLabelFromKey(mKey),
+            teamFiltered.filter(r => uptoKeys.includes(monthKey(r.nomDate))));
+        }
+      }),
+      onHover: onHoverPointer
+    }
+  });
+}
+
+</script>
+<div id="liveUpdateToast"></div>
+</body>
+</html>
